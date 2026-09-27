@@ -3,7 +3,7 @@ name: Offline translator build
 on:
   push:
     branches:
-      - automation/offline-translator-build
+      - automation/offline-translator-build-ci
   workflow_dispatch:
 
 permissions:
