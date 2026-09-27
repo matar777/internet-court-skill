@@ -12,7 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
 
@@ -86,9 +86,41 @@ jobs:
           java -cp .test SelfTest
           rm -rf .test
 
-      - name: Build debug APK
+      - name: Fetch x86_64 runtime for real Android smoke test
+        shell: bash
         working-directory: .offline-translator-ci/project
-        run: gradle --no-daemon :app:assembleDebug
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/jniLibs/x86_64
+          curl -fL --retry 3 --retry-delay 2 https://github.com/cgeo/offline-translator/releases/download/v0.2.6-cgeo.1/libbergamot-sys-x86_64.so -o app/src/main/jniLibs/x86_64/libbergamot-sys.so
+          test "$(wc -c < app/src/main/jniLibs/x86_64/libbergamot-sys.so | tr -d ' ')" = 9402592
+          echo "7dd047dc98c18fad1c6555ed81d450005c5ec276a8b21b3aaba3c4dfd7da85a9  app/src/main/jniLibs/x86_64/libbergamot-sys.so" | sha256sum -c -
+
+      - name: Real Android JNI model translation smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 28
+          arch: x86_64
+          disable-animations: true
+          script: >-
+            bash -lc 'set -o pipefail; cd .offline-translator-ci/project && gradle --no-daemon -PtargetAbi=x86_64 connectedDebugAndroidTest 2>&1 | tee "$GITHUB_WORKSPACE/android-smoke.txt"'
+
+      - name: Validate Android smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'BUILD SUCCESSFUL' android-smoke.txt
+          test "$(find .offline-translator-ci/project/app/build/outputs/androidTest-results -type f -name '*.xml' | wc -l | tr -d ' ')" -ge 1
+          if grep -R -E 'failures="[1-9]|errors="[1-9]' .offline-translator-ci/project/app/build/outputs/androidTest-results; then exit 30; fi
+          echo "BERGAMOT_ANDROID_SMOKE: PASS" | tee -a android-smoke.txt
+
+      - name: Build debug APK
+        shell: bash
+        working-directory: .offline-translator-ci/project
+        run: |
+          set -euo pipefail
+          rm -rf app/src/main/jniLibs/x86_64
+          gradle --no-daemon :app:assembleDebug
 
       - name: Verify APK structure, permissions, ABI, signature and assets
         shell: bash
@@ -103,7 +135,7 @@ jobs:
           sha256sum "$APK"
           echo "== Package / SDK =="
           aapt dump badging "$APK" | sed -n '1,10p'
-          aapt dump badging "$APK" | grep -q "package: name='com.jieshuo.offlinetranslator'"
+          aapt dump badging "$APK" | grep -q "package: name='com.jieshuo.offlinetranslator' versionCode='4' versionName='0.4.0-test'"
           aapt dump badging "$APK" | grep -q "sdkVersion:'28'"
           aapt dump badging "$APK" | grep -q "targetSdkVersion:'35'"
           echo "== Permissions =="
@@ -139,13 +171,14 @@ jobs:
         working-directory: .offline-translator-ci/project
         run: |
           set -euo pipefail
-          zip -qr "$GITHUB_WORKSPACE/JieshuoOfflineTranslator-0.3.0-source.zip" .             -x 'app/src/main/assets/models/enar/*'                'app/src/main/jniLibs/*'                'app/build/*'                '.gradle/*'
+          zip -qr "$GITHUB_WORKSPACE/JieshuoOfflineTranslator-0.4.0-source.zip" .             -x 'app/src/main/assets/models/enar/*'                'app/src/main/jniLibs/*'                'app/build/*'                '.gradle/*'
 
       - uses: actions/upload-artifact@v4
         with:
-          name: jieshuo-offline-translator
+          name: jieshuo-offline-translator-0.4.0
           path: |
             .offline-translator-ci/project/app/build/outputs/apk/debug/app-debug.apk
             apk-verify.txt
-            JieshuoOfflineTranslator-0.3.0-source.zip
+            android-smoke.txt
+            JieshuoOfflineTranslator-0.4.0-source.zip
           if-no-files-found: error

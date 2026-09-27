@@ -2,6 +2,8 @@ plugins {
     id 'com.android.application'
 }
 
+def targetAbi = project.findProperty('targetAbi') ?: 'arm64-v8a'
+
 android {
     namespace 'com.jieshuo.offlinetranslator'
     compileSdk 35
@@ -10,12 +12,14 @@ android {
         applicationId 'com.jieshuo.offlinetranslator'
         minSdk 28
         targetSdk 35
-        versionCode 3
-        versionName '0.3.0-test'
+        versionCode 4
+        versionName '0.4.0-test'
 
         ndk {
-            abiFilters 'arm64-v8a'
+            abiFilters targetAbi
         }
+
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
     buildTypes {
@@ -42,4 +46,10 @@ android {
             useLegacyPackaging = true
         }
     }
+}
+
+dependencies {
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test:core:1.6.1'
 }
